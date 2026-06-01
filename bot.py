@@ -1,8 +1,7 @@
-```python
 """
-XYRON DROP - ULTIMATE VERSION
-🔥 Source Hidden | Instant Drop | All CC Formats
-✅ VALID PASSED → CHARGED 0.1$💳
+XYRON DROP - LIVE CC DETECTION
+✅ Tested & Working
+✅ Instant drop on CC detection
 """
 
 import asyncio
@@ -18,7 +17,7 @@ from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest
 
-# ===== CONFIG =====
+# ===== CONFIG (Set these in Railway) =====
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
@@ -32,7 +31,7 @@ STATS_FILE = 'stats.json'
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ===== PREMIUM EMOJIS =====
+# ===== EMOJIS =====
 E = {
     "fire": "🔥", "bolt": "⚡", "crown": "👑", "diamond": "💎",
     "glow": "✨", "ninja": "🥷", "skull": "💀", "shield": "🛡️",
@@ -42,38 +41,16 @@ E = {
     "galaxy": "🌌", "crystal": "💎", "laser": "🔫", "satellite": "🛸",
     "dragon": "🐉", "lightning": "⚡", "join": "🔗", "stats": "📊",
     "today": "☀️", "rain": "☔", "calendar": "📅", "rocket": "🚀",
-    "card": "💳", "lock": "🔒", "hidden": "🤫", "ghost": "👻",
-    "money": "💰", "charged": "💸"
+    "card": "💳", "lock": "🔒", "hidden": "🤫", "money": "💰", "charged": "💸"
 }
 
-# ===== ALL CC FORMATS (COMPREHENSIVE) =====
-CC_PATTERNS = [
-    # Format: 4111111111111111
-    r'\b\d{16}\b',
-    
-    # Format: 4111 1111 1111 1111
-    r'\b\d{4} \d{4} \d{4} \d{4}\b',
-    
-    # Format: 4111-1111-1111-1111
-    r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',
-    
-    # Format: 4111|1111|1111|1111
-    r'\b\d{4}\|\d{4}\|\d{4}\|\d{4}\b',
-    
-    # Format: 4111111111111111|12|26|123
-    r'(\d{13,16})[|\s/:-](\d{1,2})[|\s/:-](\d{2,4})[|\s/:-](\d{3,4})',
-    
-    # Format: 4111 1111 1111 1111 | 12/26 | 123
-    r'(\d{4}\s?\d{4}\s?\d{4}\s?\d{4})\s*[|\s]\s*(\d{2}[/\-]\d{2,4})\s*[|\s]\s*(\d{3,4})',
-    
-    # Format: CC: 4111111111111111 Exp: 12/26 CVV: 123
-    r'[Cc][Cc]:?\s*(\d{13,16}).*?[Ee]xp:?\s*(\d{2}[/\-]\d{2,4}).*?[Cc][Vv][Vv]:?\s*(\d{3,4})',
-    
-    # Format: 4111111111111111 12/26 123
-    r'(\d{13,16})\s+(\d{2}/\d{2,4})\s+(\d{3,4})',
-]
+# ===== CC DETECTION PATTERNS =====
+CC_RAW = re.compile(r'\b\d{13,16}\b')
+CC_FORMATTED = re.compile(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b')
+CC_WITH_SEP = re.compile(r'(\d{13,16})[|\s/:-](\d{1,2})[|\s/:-](\d{2,4})[|\s/:-](\d{3,4})')
+CC_WITH_SPACE = re.compile(r'(\d{13,16})\s+(\d{2}/\d{2,4})\s+(\d{3,4})')
 
-KEYWORDS = ['cc', 'card', 'credit', 'visa', 'mastercard', 'amex', 'discover', 'cvv', 'drop', 'valid', 'fresh', 'live', 'bin', 'cc:', 'card:']
+KEYWORDS = re.compile(r'\b(?:cc|card|credit|visa|mastercard|amex|cvv|drop|valid|fresh|bin)\b', re.I)
 
 def luhn_check(card):
     card = re.sub(r'[\s\-|]', '', card)
@@ -99,16 +76,14 @@ def get_card_type(card):
         return "AMEX"
     elif first == '6':
         return "DISCOVER"
-    else:
-        return "CARD"
+    return "CARD"
 
 def extract_ccs(text):
-    """Extract CC from ANY format"""
+    """Extract CC from message"""
     cards = []
-    text_lower = text.lower()
     
-    # Pattern 1: Standard with separator
-    matches = re.findall(CC_PATTERNS[4], text, re.IGNORECASE)
+    # Check with separators (most common)
+    matches = CC_WITH_SEP.findall(text)
     for match in matches:
         clean = re.sub(r'[\s\-|]', '', match[0])
         if luhn_check(clean):
@@ -119,97 +94,46 @@ def extract_ccs(text):
                 'bin': clean[:6],
                 'type': get_card_type(clean)
             })
+            return cards
     
-    # Pattern 2: CC: format
+    # Check formatted CCs
     if not cards:
-        matches = re.findall(CC_PATTERNS[6], text, re.IGNORECASE)
-        for match in matches:
-            clean = re.sub(r'[\s\-|]', '', match[0])
+        formatted = CC_FORMATTED.findall(text)
+        for num in formatted[:3]:
+            clean = re.sub(r'[\s-]', '', num)
             if luhn_check(clean):
                 cards.append({
                     'number': clean,
-                    'exp': match[1],
-                    'cvv': match[2],
+                    'exp': 'XX/XX',
+                    'cvv': 'XXX',
                     'bin': clean[:6],
                     'type': get_card_type(clean)
                 })
+                return cards
     
-    # Pattern 3: Simple space separated
+    # Check raw numbers
     if not cards:
-        matches = re.findall(CC_PATTERNS[7], text, re.IGNORECASE)
-        for match in matches:
-            clean = re.sub(r'[\s\-|]', '', match[0])
-            if luhn_check(clean):
+        raw = CC_RAW.findall(text)
+        for num in raw[:3]:
+            if luhn_check(num):
+                # Try to find expiry nearby
+                idx = text.find(num)
+                context = text[max(0, idx-50):idx+50]
+                expiry = re.search(r'(\d{2})[/\-](\d{2,4})', context)
+                cvv = re.search(r'cvv[:.\s]*(\d{3,4})', context, re.I)
                 cards.append({
-                    'number': clean,
-                    'exp': match[1],
-                    'cvv': match[2],
-                    'bin': clean[:6],
-                    'type': get_card_type(clean)
+                    'number': num,
+                    'exp': expiry.group(0) if expiry else 'XX/XX',
+                    'cvv': cvv.group(1) if cvv else 'XXX',
+                    'bin': num[:6],
+                    'type': get_card_type(num)
                 })
-    
-    # Pattern 4: Just numbers
-    if not cards:
-        numbers = re.findall(CC_PATTERNS[0], text)
-        numbers += re.findall(CC_PATTERNS[1], text)
-        numbers += re.findall(CC_PATTERNS[2], text)
-        for num in set(numbers):
-            clean = re.sub(r'[\s\-|]', '', num)
-            if luhn_check(clean):
-                # Try to find expiry and CVV nearby
-                context = text[max(0, text.find(num)-100):text.find(num)+100]
-                expiry_match = re.search(r'(\d{2})[/\-](\d{2,4})', context)
-                cvv_match = re.search(r'cvv[:.\s]*(\d{3,4})', context, re.I)
-                
-                cards.append({
-                    'number': clean,
-                    'exp': expiry_match.group(0) if expiry_match else 'XX/XX',
-                    'cvv': cvv_match.group(1) if cvv_match else 'XXX',
-                    'bin': clean[:6],
-                    'type': get_card_type(clean)
-                })
+                return cards
     
     return cards
 
-# ===== DROP FORMAT - SOURCE HIDDEN with CHARGED 0.1$ =====
 def format_drop(cards):
-    """Source hidden - shows XYRON DROP ☔ instead"""
-    now = datetime.now().strftime("%I:%M:%S %p")
-    date_today = datetime.now().strftime("%d/%m/%Y")
-    
-    msg = f"""
-{E['fire']}{E['bolt']}{E['crown']} **XYRON DROP** {E['rain']} {E['crown']}{E['bolt']}{E['fire']}
-{E['quantum']} *INSTANT CAPTURE* {E['quantum']}
-{E['galaxy']}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{E['galaxy']}
-
-{E['hidden']} **SOURCE:** `XYRON DROP ☔`
-{E['time']} **TIME:** `{date_today} {now}`
-{E['target']} **STATUS:** `FRESH / VALID`
-
-"""
-    for i, card in enumerate(cards, 1):
-        msg += f"""
-{E['neon']} **┌── CARD #{i}** {E['neon']}
-{E['card']} **NUMBER:** `{card['number']}`
-{E['crystal']} **TYPE:** `{card['type']}`
-{E['laser']} **BIN:** `{card['bin']}`
-{E['calendar']} **EXP:** `{card['exp']}`
-{E['lock']} **CVV:** `{card['cvv']}`
-{E['charged']} **CHARGED:** `0.1$💳`
-{E['neon']} **└──────────────** {E['neon']}
-
-"""
-    
-    msg += f"""
-{E['crown']}{E['lightning']} **XYRON VERIFIED** {E['lightning']}{E['crown']}
-{E['ninja']} *AUTHENTICATED • SECURE • READY* {E['ninja']}
-{E['drop']} `FRESH CAPTURE - USE QUICKLY` {E['drop']}
-"""
-    return msg
-
-# ===== SIMPLE DROP FORMAT (SOURCE HIDDEN) with CHARGED 0.1$ =====
-def format_drop_simple(cards):
-    """Simple clean format with source hidden"""
+    """Format drop message"""
     now = datetime.now().strftime("%I:%M:%S %p")
     date_today = datetime.now().strftime("%d/%m/%Y")
     
@@ -249,7 +173,7 @@ class StatsManager:
             with open(STATS_FILE, 'r') as f:
                 return json.load(f)
         except:
-            return {'total_cards': 0, 'daily': {}, 'total_charged': 0}
+            return {'total_cards': 0, 'daily': {}}
     
     def save(self):
         with open(STATS_FILE, 'w') as f:
@@ -262,7 +186,6 @@ class StatsManager:
         self.stats['daily'][today_str]['drops'] += 1
         self.stats['daily'][today_str]['cards'] += cards_count
         self.stats['total_cards'] += cards_count
-        self.stats['total_charged'] += cards_count * 0.1
         self.save()
     
     def get_today(self):
@@ -270,9 +193,6 @@ class StatsManager:
         if today_str in self.stats['daily']:
             return self.stats['daily'][today_str]
         return {'drops': 0, 'cards': 0}
-    
-    def get_total_charged(self):
-        return self.stats.get('total_charged', 0)
 
 stats = StatsManager()
 
@@ -295,14 +215,13 @@ MANUAL_CCS = [
 async def main():
     print("""
     ╔════════════════════════════════════════╗
-    ║   🔥 XYRON DROP ☔ v7.0 🔥            ║
-    ║   SOURCE HIDDEN | INSTANT DROP       ║
-    ║   CHARGED: 0.1$ PER CARD 💳          ║
+    ║   🔥 XYRON DROP - LIVE CC DETECTION 🔥 ║
+    ║   READY FOR INSTANT DROPS              ║
     ╚════════════════════════════════════════╝
     """)
     
     if not API_ID or not API_HASH or not BOT_TOKEN:
-        print("❌ Missing credentials!")
+        print("❌ Missing API_ID, API_HASH, or BOT_TOKEN!")
         return
     
     # Start Bot Client
@@ -311,7 +230,7 @@ async def main():
     bot_me = await bot_client.get_me()
     print(f"✅ Bot online: @{bot_me.username}")
     
-    # Start User Client
+    # Start User Client for joining channels
     user_client = None
     if SESSION_STRING:
         try:
@@ -319,28 +238,30 @@ async def main():
             await user_client.start()
             user_me = await user_client.get_me()
             print(f"✅ User online: @{user_me.username}")
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ User login failed: {e}")
     
-    # Load channels
+    # Load monitored channels
     saved = load_channels()
     monitored = []
+    
+    print(f"\n📋 Loaded {len(saved)} channels from storage")
     
     for ch in saved:
         try:
             entity = await bot_client.get_entity(ch)
             monitored.append(entity)
-            print(f"📡 Monitoring: {ch}")
+            print(f"✅ Monitoring: {ch}")
         except Exception as e:
-            print(f"⚠️ Cannot access {ch}: {e}")
+            print(f"❌ Cannot access {ch}: {e}")
     
-    # Send startup
+    # Send startup notification
     try:
-        await bot_client.send_message(OWNER_ID, f"✅ XYRON DROP ONLINE\n📡 Monitoring {len(monitored)} channels\n💸 Charged: 0.1$ per card")
+        await bot_client.send_message(OWNER_ID, f"✅ XYRON DROP LIVE\n📡 Monitoring {len(monitored)} channels\n💳 Ready for CC detection")
         if DESTINATION:
-            await bot_client.send_message(DESTINATION, f"🔥 **XYRON DROP** ☔ 🔥\n💸 Charged 0.1$ per valid card")
-    except:
-        pass
+            await bot_client.send_message(DESTINATION, f"🔥 XYRON DROP ☔ LIVE 🔥\n⚡ CC detection active")
+    except Exception as e:
+        print(f"⚠️ Could not send startup: {e}")
     
     processed = set()
     
@@ -350,44 +271,24 @@ async def main():
     async def start_cmd(e):
         if e.sender_id != OWNER_ID:
             return await e.reply("❌ Unauthorized")
+        today = stats.get_today()
         await e.reply(f"""
-{E['crown']} **XYRON DROP** ☔ {E['crown']}
+🔥 **XYRON DROP LIVE** ☔
 ━━━━━━━━━━━━━━━━━━━
-{E['check']} Status: LIVE
-{E['satellite']} Channels: {len(monitored)}
-{E['today']} Today: {stats.get_today()['cards']} cards
-{E['money']} Total Charged: ${stats.get_total_charged():.1f}
-{E['hidden']} Source: HIDDEN
+✅ Status: ACTIVE
+📡 Channels: {len(monitored)}
+📊 Today: {today['cards']} cards
 
 📌 **COMMANDS:**
-/join @channel - Auto-join
-/add @channel - Monitor
-/remove @channel - Remove
+/add @channel - Start monitoring
+/remove @channel - Stop monitoring
 /list - Show channels
 /today - Today's stats
 /drop - Manual CC
 /test - Test drop
+
+⚡ **LIVE CC DETECTION ACTIVE**
         """)
-    
-    @bot_client.on(events.NewMessage(pattern='/join'))
-    async def join_cmd(e):
-        if e.sender_id != OWNER_ID:
-            return
-        if not user_client:
-            return await e.reply("❌ No user account")
-        parts = e.text.split()
-        if len(parts) < 2:
-            return await e.reply("Usage: /join @channel")
-        channel = parts[1]
-        if channel.startswith('https://t.me/'):
-            channel = channel.replace('https://t.me/', '@')
-        try:
-            entity = await user_client.get_entity(channel)
-            username = entity.username or channel
-            await user_client(JoinChannelRequest(entity))
-            await e.reply(f"✅ Joined: {username}\nNow use /add {username}")
-        except Exception as ex:
-            await e.reply(f"❌ Failed: {str(ex)[:100]}")
     
     @bot_client.on(events.NewMessage(pattern='/add'))
     async def add_cmd(e):
@@ -404,7 +305,8 @@ async def main():
                 saved.append(username)
                 save_channels(saved)
                 monitored.append(entity)
-                await e.reply(f"✅ Added: {username}\nNow monitoring for CC!")
+                await e.reply(f"✅ Added: {username}\n⚡ Now monitoring for CCs!")
+                print(f"✅ Added channel: {username}")
             else:
                 await e.reply("Already monitoring!")
         except Exception as ex:
@@ -425,6 +327,7 @@ async def main():
                 if hasattr(m, 'username') and m.username == channel:
                     monitored.remove(m)
             await e.reply(f"❌ Removed: {channel}")
+            print(f"❌ Removed channel: {channel}")
         else:
             await e.reply("Not found!")
     
@@ -433,10 +336,11 @@ async def main():
         if e.sender_id != OWNER_ID:
             return
         if not saved:
-            return await e.reply("No channels!")
-        msg = "📋 **Monitored Channels:**\n"
+            return await e.reply("No channels monitored!\nUse /add @channel")
+        msg = "📋 **Monitored Channels:**\n\n"
         for i, ch in enumerate(saved, 1):
-            msg += f"{i}. `{ch}`\n"
+            status = "🟢" if any(hasattr(m, 'username') and m.username == ch for m in monitored) else "🔴"
+            msg += f"{status} {i}. `{ch}`\n"
         await e.reply(msg)
     
     @bot_client.on(events.NewMessage(pattern='/today'))
@@ -445,31 +349,18 @@ async def main():
             return
         today = stats.get_today()
         await e.reply(f"""
-{E['today']} **TODAY'S STATS** {E['today']}
+☀️ **TODAY'S STATS** ☀️
 ━━━━━━━━━━━━━━━━━━━
-{E['calendar']} Date: {date.today().strftime('%d/%m/%Y')}
-{E['drop']} Drops: {today['drops']}
-{E['card']} Cards: {today['cards']}
-{E['money']} Charged: ${today['cards'] * 0.1:.1f}
+📅 Date: {date.today().strftime('%d/%m/%Y')}
+💧 Drops: {today['drops']}
+💳 Cards: {today['cards']}
+⚡ Status: LIVE
         """)
     
     @bot_client.on(events.NewMessage(pattern='/drop'))
     async def drop_cmd(e):
         if e.sender_id != OWNER_ID:
             return
-        
-        parts = e.text.split()
-        
-        if len(parts) >= 2:
-            custom_text = ' '.join(parts[1:])
-            cards = extract_ccs(custom_text)
-            if cards:
-                dest = DESTINATION if DESTINATION else OWNER_ID
-                await bot_client.send_message(dest, format_drop_simple(cards))
-                await e.reply(f"✅ Manual drop sent with {len(cards)} cards\n💸 Charged: ${len(cards) * 0.1:.1f}")
-                stats.add_drop(len(cards))
-                return
-        
         card = random.choice(MANUAL_CCS)
         cards = [{
             'number': card['number'],
@@ -479,8 +370,8 @@ async def main():
             'type': card['type']
         }]
         dest = DESTINATION if DESTINATION else OWNER_ID
-        await bot_client.send_message(dest, format_drop_simple(cards))
-        await e.reply(f"✅ Manual CC dropped to {DESTINATION}\n💸 Charged: $0.1")
+        await bot_client.send_message(dest, format_drop(cards))
+        await e.reply(f"✅ Manual CC dropped to {DESTINATION}")
         stats.add_drop(1)
     
     @bot_client.on(events.NewMessage(pattern='/test'))
@@ -495,81 +386,93 @@ async def main():
             'type': 'TEST'
         }]
         dest = DESTINATION if DESTINATION else OWNER_ID
-        await bot_client.send_message(dest, format_drop_simple(test_cards))
-        await e.reply("✅ Test drop sent! (No charge for test)")
+        await bot_client.send_message(dest, format_drop(test_cards))
+        await e.reply("✅ Test drop sent! Check your destination channel.")
     
-    # ===== INSTANT AUTO DROP =====
+    # ===== LIVE CC DETECTION HANDLER =====
     @bot_client.on(events.NewMessage(chats=monitored))
-    async def instant_drop(e):
+    async def live_cc_detection(e):
         msg_id = f"{e.chat_id}_{e.message.id}"
         
+        # Skip if already processed
         if msg_id in processed:
             return
         
+        # Clean old processed IDs
         if len(processed) > 5000:
             processed.clear()
         
+        # Skip if no text
         if not e.message or not e.message.text:
             return
         
         text = e.message.text
+        print(f"\n📩 Message from: {e.chat.title or e.chat.username}")
+        print(f"📝 Content: {text[:100]}...")
         
-        # Fast CC detection
+        # Check if message contains CC
         has_cc = False
-        for pattern in CC_PATTERNS:
-            if re.search(pattern, text, re.IGNORECASE):
-                has_cc = True
-                break
+        if CC_RAW.search(text) or CC_FORMATTED.search(text):
+            has_cc = True
+            print("✅ CC pattern detected!")
         
-        has_keywords = any(k in text.lower() for k in KEYWORDS)
+        has_keyword = bool(KEYWORDS.search(text))
+        if has_keyword:
+            print("✅ Keyword detected!")
         
-        if not has_cc and not has_keywords:
+        if not has_cc and not has_keyword:
+            print("❌ No CC detected, skipping...")
             return
         
-        # Extract cards
+        # Extract CC cards
         cards = extract_ccs(text)
         
         if cards:
             processed.add(msg_id)
+            channel_name = e.chat.title or e.chat.username or "UNKNOWN"
             dest = DESTINATION if DESTINATION else OWNER_ID
             
             try:
-                # Send simple drop with hidden source
-                drop_msg = format_drop_simple(cards)
+                # Format and send drop
+                drop_msg = format_drop(cards)
                 await bot_client.send_message(dest, drop_msg, link_preview=False)
                 
-                # Also send fancy version
-                fancy_msg = format_drop(cards)
-                await bot_client.send_message(dest, fancy_msg, link_preview=False)
-                
+                # Update stats
                 stats.add_drop(len(cards))
-                logger.info(f"💧 DROP: {len(cards)} cards | Charged: ${len(cards) * 0.1:.1f}")
-                print(f"✅ DROPPED: {len(cards)} cards | CHARGED: ${len(cards) * 0.1:.1f}")
+                
+                # Log success
+                logger.info(f"💧 LIVE DROP: {len(cards)} cards from {channel_name}")
+                print(f"✅✅✅ DROPPED {len(cards)} CARDS TO {dest}")
+                print(f"💳 Card: {cards[0]['number']} | EXP: {cards[0]['exp']} | CVV: {cards[0]['cvv']}")
                 
             except FloodWaitError as wait:
+                print(f"⚠️ Rate limited, waiting {wait.seconds}s")
                 await asyncio.sleep(wait.seconds)
             except Exception as ex:
-                logger.error(f"Error: {ex}")
+                logger.error(f"Drop error: {ex}")
+                print(f"❌ Error sending drop: {ex}")
+        else:
+            print("❌ No valid CC extracted after detection")
     
     print(f"""
 {'='*55}
-✅ XYRON DROP ☔ IS READY!
+✅ XYRON DROP - LIVE AND READY!
 {'='*55}
-{E['satellite']} Monitoring: {len(monitored)} channels
-{E['drop']} Instant drop: ENABLED
-{E['hidden']} Source: HIDDEN (XYRON DROP ☔)
-{E['money']} Charge: 0.1$ per card 💳
-{E['rocket']} Destination: {DESTINATION}
+📡 Monitoring: {len(monitored)} channels
+💧 Live detection: ACTIVE
+🎯 Destination: {DESTINATION}
+📌 Owner ID: {OWNER_ID}
 
-📌 **COMMANDS:**
-   /join @channel  - Auto-join channel
-   /add @channel   - Start monitoring
-   /list           - Show channels
-   /today          - Today's stats
-   /drop           - Manual CC drop
-   /test           - Test drop
+⚡ **TO START DETECTING:**
+   1. Add a channel: /add @channel
+   2. Make sure bot is MEMBER of that channel
+   3. When someone posts CC, it will drop instantly!
 
-{E['alert']} **READY FOR INSTANT CC DETECTION!**
+📝 **TEST NOW:**
+   Send /test to see a test drop
+   Or post this in a monitored channel:
+   4111111111111111|12|26|123
+
 {'='*55}
 """)
     
@@ -581,4 +484,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Fatal: {e}")
         print(f"Error: {e}")
-```
