@@ -1,5 +1,6 @@
 """
-XYRON DROP ☔ – Single‑Group Monitor + Flood Wait Handling
+XYRON DROP ☔ – ULTIMATE CC EXTRACTOR
+Handles: pipe, slash, space, MMyy, card-only, everything.
 """
 
 import asyncio
@@ -14,12 +15,12 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
 
-# ===== RAILWAY ENVIRONMENT VARIABLES =====
+# ===== RAILWAY ENVIRONMENT =====
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 OWNER_ID = int(os.environ.get('OWNER_ID', 0))
-SOURCE_GROUPS = os.environ.get('SOURCE_GROUPS', '').split(',')  # only first one used initially
+SOURCE_GROUPS = os.environ.get('SOURCE_GROUPS', '').split(',')
 DESTINATION = os.environ.get('DESTINATION_CHANNEL', '')
 
 CHANNELS_FILE = 'monitored.json'
@@ -28,16 +29,7 @@ STATS_FILE = 'stats.json'
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ===== CC DETECTION (wide patterns) =====
-CC_PATTERNS = [
-    r'\b\d{16}\b',
-    r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b',
-    r'(\d{13,16})[|\s/:-](\d{1,2})[|\s/:-](\d{2,4})[|\s/:-](\d{3,4})',
-    r'(\d{4}\s?\d{4}\s?\d{4}\s?\d{4})\s*[|/-]\s*(\d{2}/\d{2,4})\s*[|/-]\s*(\d{3,4})',
-]
-
-KEYWORDS = re.compile(r'\b(?:cc|card|credit|visa|mastercard|amex|cvv|valid|fresh|drop|bin)\b', re.I)
-
+# ===== CC VALIDATION =====
 def luhn_check(card):
     card = re.sub(r'[\s\-|]', '', card)
     if not card.isdigit() or not (13 <= len(card) <= 16):
@@ -64,39 +56,63 @@ def get_card_type(card):
         return "DISCOVER"
     return "CARD"
 
+# ===== EXTRACT CC, EXPIRY, CVV – HANDLES EVERYTHING =====
 def extract_ccs(text):
-    """Extract first valid CC with its expiry and CVV if available"""
-    cards = []
-    for pattern in CC_PATTERNS:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        for match in matches:
-            if isinstance(match, tuple):
-                clean = re.sub(r'[\s\-|]', '', match[0])
-                if luhn_check(clean):
-                    cards.append({
-                        'number': clean,
-                        'exp': f"{match[1]}/{match[2][-2:]}",
-                        'cvv': match[3],
-                        'bin': clean[:6],
-                        'type': get_card_type(clean)
-                    })
-                    return cards
-            else:
-                clean = re.sub(r'[\s\-|]', '', match)
-                if luhn_check(clean):
-                    idx = text.find(match)
-                    context = text[max(0, idx-100):idx+100]
-                    expiry_match = re.search(r'(\d{2})[/\-](\d{2,4})', context)
-                    cvv_match = re.search(r'cvv[:.\s]*(\d{3,4})', context, re.I)
-                    cards.append({
-                        'number': clean,
-                        'exp': expiry_match.group(0) if expiry_match else '??/??',
-                        'cvv': cvv_match.group(1) if cvv_match else '???',
-                        'bin': clean[:6],
-                        'type': get_card_type(clean)
-                    })
-                    return cards
-    return cards
+    """Return list with one card (first valid). Extracts all info."""
+    # 1. Standard pipe: 5446147525910816|07|27|364
+    m = re.search(r'(\d{13,16})\s*[|]\s*(\d{1,2})\s*[|]\s*(\d{2,4})\s*[|]\s*(\d{3,4})', text, re.I)
+    if m:
+        cc = re.sub(r'[\s\-|]', '', m.group(1))
+        if luhn_check(cc):
+            return [{'number': cc, 'exp': f"{m.group(2)}/{m.group(3)}", 'cvv': m.group(4), 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    # 2. Pipe with slash: 5193458202434359|07/26|591
+    m = re.search(r'(\d{13,16})\s*[|]\s*(\d{2}/\d{2,4})\s*[|]\s*(\d{3,4})', text, re.I)
+    if m:
+        cc = re.sub(r'[\s\-|]', '', m.group(1))
+        if luhn_check(cc):
+            return [{'number': cc, 'exp': m.group(2), 'cvv': m.group(3), 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    # 3. Space separated: card + MMyy + cvv  (e.g., 4867960043082121 1129 358)
+    m = re.search(r'(\d{13,16})\s+(\d{4})\s+(\d{3,4})', text)
+    if m:
+        cc = m.group(1)
+        if luhn_check(cc):
+            month = m.group(2)[:2]
+            year = m.group(2)[2:]
+            exp = f"{month}/{year}"
+            return [{'number': cc, 'exp': exp, 'cvv': m.group(3), 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    # 4. Space separated: card + MM/YY + cvv
+    m = re.search(r'(\d{13,16})\s+(\d{2}/\d{2,4})\s+(\d{3,4})', text)
+    if m:
+        cc = m.group(1)
+        if luhn_check(cc):
+            return [{'number': cc, 'exp': m.group(2), 'cvv': m.group(3), 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    # 5. Space separated: card + MM + YY + cvv
+    m = re.search(r'(\d{13,16})\s+(\d{2})\s+(\d{2,4})\s+(\d{3,4})', text)
+    if m:
+        cc = m.group(1)
+        if luhn_check(cc):
+            exp = f"{m.group(2)}/{m.group(3)}"
+            return [{'number': cc, 'exp': exp, 'cvv': m.group(4), 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    # 6. Card + CVV only (space)
+    m = re.search(r'(\d{13,16})\s+(\d{3,4})', text)
+    if m:
+        cc = m.group(1)
+        if luhn_check(cc):
+            return [{'number': cc, 'exp': 'N/A', 'cvv': m.group(2), 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    # 7. Just the card number
+    m = re.search(r'\b\d{13,16}\b', text)
+    if m:
+        cc = m.group(0)
+        if luhn_check(cc):
+            return [{'number': cc, 'exp': 'N/A', 'cvv': 'N/A', 'bin': cc[:6], 'type': get_card_type(cc)}]
+
+    return []
 
 # ===== STYLED DROP FORMAT =====
 def format_styled_drop(cards):
@@ -118,7 +134,7 @@ def format_styled_drop(cards):
     msg += f"⏱️ {date_today} {now}"
     return msg
 
-# ===== STATS MANAGER =====
+# ===== STATS MANAGER (same as before) =====
 class StatsManager:
     def __init__(self):
         self.stats = self.load()
@@ -161,14 +177,13 @@ def save_channels(channels):
     with open(CHANNELS_FILE, 'w') as f:
         json.dump(channels, f)
 
-# Manual test cards
 MANUAL_CCS = [
     {'number': '4532123456781234', 'exp': '12/26', 'cvv': '789', 'type': 'VISA', 'bin': '453212'},
     {'number': '5424123456781234', 'exp': '08/27', 'cvv': '456', 'type': 'MASTERCARD', 'bin': '542412'},
 ]
 
 async def main():
-    print("\n🔥 XYRON DROP ☔ – SINGLE GROUP MONITOR 🔥\n")
+    print("\n🔥 XYRON DROP ☔ – FINAL VERSION 🔥\n")
 
     if not API_ID or not API_HASH or not SESSION_STRING:
         logger.error("Missing API_ID, API_HASH or SESSION_STRING")
@@ -179,19 +194,12 @@ async def main():
     me = await client.get_me()
     logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
 
-    # Load previously saved groups (or use the first from env)
     saved = load_channels()
     if saved:
         sources_to_monitor = saved
     else:
-        # Take the first non‑empty group from SOURCE_GROUPS env var
-        default_group = next((g.strip() for g in SOURCE_GROUPS if g.strip()), None)
-        if default_group:
-            sources_to_monitor = [default_group]
-        else:
-            sources_to_monitor = []
+        sources_to_monitor = [g.strip() for g in SOURCE_GROUPS if g.strip()]
 
-    # Resolve entities
     sources = []
     for group in sources_to_monitor:
         try:
@@ -202,19 +210,17 @@ async def main():
             logger.error(f"❌ Cannot access {group}: {e}")
 
     if not sources:
-        logger.error("No source groups to monitor. Use /add @channel to add one.")
-        # Still start so commands can add later
+        logger.error("No source groups. Use /add @channel")
+        # allow adding later
 
-    # Destination
     try:
         dest_entity = await client.get_entity(DESTINATION)
-        await client.send_message(dest_entity, f"🔥 XYRON DROP ☔ ONLINE\nMonitoring {len(sources)} group(s)\nStylish drops enabled")
+        await client.send_message(dest_entity, f"🔥 XYRON DROP ☔ ONLINE\nMonitoring {len(sources)} group(s)\nNow handles MMyy expiry")
         logger.info(f"✅ Destination: {DESTINATION}")
     except Exception as e:
         logger.error(f"Destination error: {e}")
         return
 
-    # Save initial groups if not already saved
     if not saved and sources_to_monitor:
         save_channels(sources_to_monitor)
 
@@ -230,46 +236,30 @@ async def main():
 ━━━━━━━━━━━━━━━━━━━
 ✅ Status: LIVE
 📡 Groups: {len(sources)}
-💎 Style: FULL INFO
+💎 Formats: ALL (pipe, slash, space, MMyy)
 
-📌 **Commands:**
-/status – Bot health
-/testcc [card] – Simulate drop
-/add @group – Add source
-/remove @group – Remove
-/list – Show sources
-/stats – Total stats
-/today – Today's drops
-/drop – Manual drop
+📌 Commands: /status, /testcc, /add, /remove, /list, /stats, /today, /drop
         """)
 
     @client.on(events.NewMessage(pattern='/status'))
     async def status_cmd(e):
         if e.sender_id != OWNER_ID:
             return
-        await e.reply(f"""
-📡 **LIVE STATUS**
-━━━━━━━━━━━━━━━━━
-Groups: {len(sources)}
-Today's cards: {stats.get_today()['cards']}
-Connection: ACTIVE
-✅ Bot receiving messages
-        """)
+        await e.reply(f"📡 Live – {len(sources)} groups, today {stats.get_today()['cards']} cards")
 
     @client.on(events.NewMessage(pattern='/testcc'))
     async def testcc_cmd(e):
         if e.sender_id != OWNER_ID:
             return
         parts = e.text.split(maxsplit=1)
-        test_text = parts[1] if len(parts) > 1 else "4111111111111111|12|26|123"
+        test_text = parts[1] if len(parts) > 1 else "4867960043082121 1129 358"
         cards = extract_ccs(test_text)
         if cards:
             try:
                 await client.send_message(dest_entity, format_styled_drop(cards))
-                await e.reply(f"✅ Test drop sent – styled format")
+                await e.reply(f"✅ Test drop sent – extracted: {cards[0]['exp']}")
                 stats.add_drop(len(cards))
             except FloodWaitError as wait:
-                await e.reply(f"⏳ Rate limit, waiting {wait.seconds}s")
                 await asyncio.sleep(wait.seconds)
                 await client.send_message(dest_entity, format_styled_drop(cards))
                 await e.reply("✅ Test drop sent after wait")
@@ -323,7 +313,7 @@ Connection: ACTIVE
             return
         if not sources_to_monitor:
             return await e.reply("No sources")
-        msg = "📋 **Sources**\n"
+        msg = "📋 Sources\n"
         for i, ch in enumerate(sources_to_monitor, 1):
             status = "🟢" if any(hasattr(s, 'username') and s.username == ch for s in sources) else "🔴"
             msg += f"{status} {i}. `{ch}`\n"
@@ -334,39 +324,32 @@ Connection: ACTIVE
         if e.sender_id != OWNER_ID:
             return
         total = stats.get_total()
-        await e.reply(f"📊 **Total**\nCards: {total['cards']}\nDrops: {total['drops']}\nActive: {len(sources)}")
+        await e.reply(f"📊 Total cards: {total['cards']}\nDrops: {total['drops']}")
 
     @client.on(events.NewMessage(pattern='/today'))
     async def today_cmd(e):
         if e.sender_id != OWNER_ID:
             return
         today = stats.get_today()
-        await e.reply(f"☀️ **Today**\nCards: {today['cards']}\nDrops: {today['drops']}")
+        await e.reply(f"☀️ Today: {today['cards']} cards, {today['drops']} drops")
 
     @client.on(events.NewMessage(pattern='/drop'))
     async def drop_cmd(e):
         if e.sender_id != OWNER_ID:
             return
         card = random.choice(MANUAL_CCS)
-        cards = [{
-            'number': card['number'],
-            'exp': card['exp'],
-            'cvv': card['cvv'],
-            'bin': card['bin'],
-            'type': card['type']
-        }]
+        cards = [{'number': card['number'], 'exp': card['exp'], 'cvv': card['cvv'], 'bin': card['bin'], 'type': card['type']}]
         try:
             await client.send_message(dest_entity, format_styled_drop(cards))
             await e.reply("💧 Manual drop sent")
             stats.add_drop(1)
         except FloodWaitError as wait:
-            await e.reply(f"⏳ Rate limit, waiting {wait.seconds}s")
             await asyncio.sleep(wait.seconds)
             await client.send_message(dest_entity, format_styled_drop(cards))
             await e.reply("💧 Manual drop sent after wait")
             stats.add_drop(1)
 
-    # ===== LIVE DETECTION WITH FLOOD WAIT HANDLING =====
+    # ===== LIVE DETECTION =====
     @client.on(events.NewMessage(chats=sources))
     async def live_detect(event):
         msg_id = f"{event.chat_id}_{event.message.id}"
@@ -379,11 +362,10 @@ Connection: ACTIVE
         if not text:
             return
 
-        print(f"\n📩 [{event.chat.title}] {text[:80]}...")
+        print(f"\n📩 [{event.chat.title}] {text[:100]}...")
 
-        has_pattern = any(re.search(p, text, re.I) for p in CC_PATTERNS[:2])
-        has_keyword = bool(KEYWORDS.search(text))
-        if not (has_pattern or has_keyword):
+        # Quick heuristic (avoid heavy regex on every message)
+        if not re.search(r'\b\d{13,16}\b', text):
             return
 
         cards = extract_ccs(text)
@@ -392,33 +374,23 @@ Connection: ACTIVE
 
         processed.add(msg_id)
 
-        # Retry loop for FloodWaitError
         for attempt in range(3):
             try:
                 await client.send_message(dest_entity, format_styled_drop(cards), link_preview=False)
                 stats.add_drop(len(cards))
                 logger.info(f"💧 DROPPED {len(cards)} CC(s) from {event.chat.title}")
-                print(f"✅ FORWARDED {len(cards)} CC(s) → {DESTINATION}")
+                print(f"✅ FORWARDED → {DESTINATION}")
                 break
             except FloodWaitError as e:
-                wait_time = e.seconds
-                logger.warning(f"⏳ Flood wait {wait_time}s - waiting...")
-                print(f"⏳ Flood wait: {wait_time}s - waiting...")
-                await asyncio.sleep(wait_time)
-                # after wait, retry
+                await asyncio.sleep(e.seconds)
             except Exception as e:
                 logger.error(f"Forward error: {e}")
                 break
 
     print(f"\n✅ XYRON DROP ☔ – READY")
     print(f"📡 Monitoring {len(sources)} group(s) → {DESTINATION}")
-    print("📌 Use /testcc to test the styled drop")
-    print("🚀 Bot will now forward any CC from monitored groups\n")
-
+    print("🧪 Test with: /testcc 4867960043082121 1129 358")
     await client.run_until_disconnected()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        logger.error(f"Fatal: {e}")
+    asyncio.run(main())
