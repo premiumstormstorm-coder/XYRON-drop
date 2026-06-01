@@ -1,7 +1,5 @@
 """
-XYRON LIVE DROPS - FULLY WORKING BOT
-Real-time CC drops from monitored channels
-Admin commands | Instant forwarding
+XYRON LIVE DROPS - WORKING VERSION
 """
 
 import asyncio
@@ -10,40 +8,41 @@ import re
 import json
 import logging
 from datetime import datetime
-from telethon import TelegramClient, events
-from telethon.tl.functions.channels import JoinChannelRequest
 
-# ===== RAILWAY VARIABLES =====
+# Try to import telethon, print error if not installed
+try:
+    from telethon import TelegramClient, events
+    from telethon.errors import FloodWaitError
+except ImportError as e:
+    print(f"ERROR: telethon not installed! Run: pip install telethon")
+    raise e
+
+# ===== CONFIG =====
 API_ID = int(os.environ.get('22225572', 0))
 API_HASH = os.environ.get('3734fae2ee81188b5355cab5a30e8f55', '')
 BOT_TOKEN = os.environ.get('8808705051:AAGLbuTt3CXJ3Rf2kwChmcw_RNKJJqoTZLY', '')
 OWNER_ID = int(os.environ.get('5758431714', 0))
-DESTINATION = os.environ.get('@xyrons', '')
+DESTINATION = os.environ.get('@xyrons', '@xyrons')
 
-CHANNELS_FILE = 'monitored_channels.json'
+CHANNELS_FILE = 'monitored.json'
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ===== FUTURISTIC EMOJIS =====
+# ===== EMOJIS =====
 F = {
-    "neon": "🔮", "cyber": "💠", "hologram": "✨", "quantum": "⚛️",
-    "plasma": "🔥", "void": "🖤", "galaxy": "🌌", "nuclear": "☢️",
-    "robot": "🤖", "alien": "👽", "crystal": "💎", "laser": "🔫",
-    "mega": "💥", "storm": "🌩️", "virus": "🦠", "circuit": "🔌",
-    "microchip": "📟", "satellite": "🛸", "sword": "⚔️", "shield": "🛡️",
-    "dragon": "🐉", "skull": "💀", "crown": "👑", "lightning": "⚡",
-    "infinity": "♾️", "matrix": "〽️", "binary": "🔢", "terminal": "💻",
-    "add": "➕", "remove": "❌", "list": "📋", "check": "✅",
-    "warning": "⚠️", "info": "ℹ️", "power": "🔋", "drop": "💧",
-    "target": "🎯", "time": "⏱️", "alert": "🚨"
+    "neon": "🔮", "cyber": "💠", "plasma": "🔥", "quantum": "⚛️",
+    "galaxy": "🌌", "crystal": "💎", "laser": "🔫", "mega": "💥",
+    "satellite": "🛸", "shield": "🛡️", "dragon": "🐉", "skull": "💀",
+    "crown": "👑", "lightning": "⚡", "add": "➕", "remove": "❌",
+    "list": "📋", "check": "✅", "warning": "⚠️", "drop": "💧",
+    "alert": "🚨", "target": "🎯", "time": "⏱️", "robot": "🤖"
 }
 
 # ===== CC DETECTION =====
-CC_PATTERN = r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12}|\d{16})\b'
 CC_FORMATTED = r'\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
 CC_WITH_EXP = r'(\d{13,16})[|\s/:-](\d{1,2})[|\s/:-](\d{2,4})[|\s/:-](\d{3,4})'
-KEYWORDS = ['cc', 'card', 'credit', 'visa', 'mastercard', 'amex', 'discover', 'cvv', 'drop', 'valid', 'fresh', 'live', 'bin']
+KEYWORDS = ['cc', 'card', 'credit', 'visa', 'mastercard', 'cvv', 'drop', 'valid', 'fresh', 'bin']
 
 def luhn_check(card):
     card = re.sub(r'[\s-]', '', card)
@@ -61,314 +60,262 @@ def luhn_check(card):
 
 def extract_ccs(text):
     cards = []
-    
-    # Pattern 1: Standard CC with expiry and CVV
     matches = re.findall(CC_WITH_EXP, text, re.IGNORECASE)
     for match in matches:
         clean = re.sub(r'[\s-]', '', match[0])
         if luhn_check(clean):
             cards.append({
-                'num': clean,
                 'masked': f"{clean[:4]}****{clean[-4:]}",
                 'exp': f"{match[1]}/{match[2][-2:]}",
                 'cvv': match[3],
                 'bin': clean[:6],
-                'type': "💳 VISA" if clean.startswith('4') else "💳 MC" if clean.startswith('5') else "💳 AMEX" if clean.startswith('3') else "💳 DISC"
+                'type': "VISA" if clean.startswith('4') else "MC" if clean.startswith('5') else "AMEX"
             })
-    
-    # Pattern 2: Just card numbers
     if not cards:
-        numbers = re.findall(CC_PATTERN, text)
-        numbers += re.findall(CC_FORMATTED, text)
+        numbers = re.findall(CC_FORMATTED, text)
         for num in set(numbers):
             clean = re.sub(r'[\s-]', '', num)
             if luhn_check(clean):
-                context = text[max(0, text.find(num)-100):text.find(num)+100]
-                expiry = re.search(r'(\d{2})[/\-](\d{2,4})', context)
-                cvv = re.search(r'cvv[:.\s]*(\d{3,4})', context, re.I)
                 cards.append({
-                    'num': clean,
                     'masked': f"{clean[:4]}****{clean[-4:]}",
-                    'exp': expiry.group(0) if expiry else 'XX/XX',
-                    'cvv': cvv.group(1) if cvv else 'XXX',
+                    'exp': 'XX/XX',
+                    'cvv': 'XXX',
                     'bin': clean[:6],
-                    'type': "💳 VISA" if clean.startswith('4') else "💳 MC" if clean.startswith('5') else "💳 AMEX" if clean.startswith('3') else "💳 DISC"
+                    'type': "CARD"
                 })
     return cards
 
 def format_drop(cards, channel_name):
-    now = datetime.now()
-    timestamp = now.strftime("%H:%M:%S")
-    date = now.strftime("%d/%m/%Y")
-    
-    drop = f"""
-{F['alert']}{F['plasma']}{F['storm']} ═══ **XYRON LIVE DROP** ═══ {F['storm']}{F['plasma']}{F['alert']}
-{F['quantum']} *REAL-TIME CAPTURE* {F['quantum']}
-{F['galaxy']}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{F['galaxy']}
+    now = datetime.now().strftime("%H:%M:%S")
+    date = datetime.now().strftime("%d/%m/%Y")
+    msg = f"""
+{F['alert']}{F['plasma']} **XYRON LIVE DROP** {F['plasma']}{F['alert']}
+{F['galaxy']}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{F['galaxy']}
 
 {F['satellite']} **SOURCE:** `{channel_name}`
-{F['target']} **TIME:** `{date} {timestamp}`
-{F['microchip']} **STATUS:** `LIVE / VALID`
-
-{F['dragon']}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{F['dragon']}
+{F['time']} **TIME:** `{date} {now}`
+{F['target']} **STATUS:** `LIVE`
 
 """
     for i, card in enumerate(cards, 1):
-        drop += f"""
-{F['neon']} **┌── CARD #{i}** {F['neon']}
-{F['cyber']} │ {F['robot']} `{card['type']}`
-{F['hologram']} │ 💳 `{card['masked']}`
-{F['circuit']} │ 🏦 BIN: `{card['bin']}`
-{F['terminal']} │ 📅 EXP: `{card['exp']}`
-{F['laser']} │ 🔒 CVV: `{card['cvv']}`
-{F['shield']} │ ✅ LUHN: `PASS`
-{F['neon']} **└─────** {F['neon']}
-
+        msg += f"""
+{F['neon']} **CARD #{i}** {F['neon']}
+┌─────────────────────────┐
+│ 💳 `{card['masked']}`    │
+│ 🏦 BIN: `{card['bin']}`   │
+│ 📅 EXP: `{card['exp']}`  │
+│ 🔒 CVV: `{card['cvv']}`  │
+│ ✅ VALID: `PASS`         │
+└─────────────────────────┘
 """
-    
-    drop += f"""
-{F['crown']}{F['lightning']}{F['mega']} **XYRON VERIFIED** {F['mega']}{F['lightning']}{F['crown']}
-{F['alien']} *AUTHENTICATED • VALID • READY* {F['alien']}
-
-{F['quantum']}╔════════════════════════════════════════╗
-{F['neon']}║  {F['infinity']} XYRON SECURITY v9.4 {F['infinity']}                ║
-{F['cyber']}║  {F['matrix']} ENCRYPTION: ACTIVE {F['matrix']}              ║
-{F['plasma']}║  {F['nuclear']} DROP MODE: INSTANT {F['nuclear']}             ║
-{F['galaxy']}╚════════════════════════════════════════╝
-
-{F['skull']} **FRESH DROP** • USE QUICKLY {F['skull']}
-{F['void']} **XYRON DROPS** | *PREMIUM EDITION*
-
-{F['robot']} `SYSTEM: LIVE` {F['robot']} {F['crystal']} `DROP: READY` {F['crystal']}
+    msg += f"""
+{F['crown']}{F['lightning']} **XYRON VERIFIED** {F['lightning']}{F['crown']}
+{F['shield']} *AUTHENTICATED • READY TO USE* {F['shield']}
+{F['drop']} `FRESH CAPTURE` {F['drop']}
 """
-    return drop
+    return msg
 
-# ===== CHANNEL MANAGER =====
-class ChannelManager:
-    def __init__(self):
-        self.channels = self.load()
-    
-    def load(self):
-        try:
-            with open(CHANNELS_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return []
-    
-    def save(self):
-        with open(CHANNELS_FILE, 'w') as f:
-            json.dump(self.channels, f)
-    
-    def add(self, channel_id, username, title):
-        ch = {'id': channel_id, 'username': username, 'title': title, 'added': datetime.now().isoformat()}
-        if ch not in self.channels:
-            self.channels.append(ch)
-            self.save()
-            return True
-        return False
-    
-    def remove(self, username):
-        for ch in self.channels:
-            if ch['username'] == username:
-                self.channels.remove(ch)
-                self.save()
-                return True
-        return False
-    
-    def get_all(self):
-        return self.channels
+def load_channels():
+    try:
+        with open(CHANNELS_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return []
 
-cm = ChannelManager()
+def save_channels(channels):
+    with open(CHANNELS_FILE, 'w') as f:
+        json.dump(channels, f)
 
-# ===== MAIN BOT =====
 async def main():
-    print(f"""
-    ╔════════════════════════════════════════════╗
-    ║   {F['plasma']} XYRON LIVE DROPS ACTIVE {F['plasma']}            ║
-    ║   {F['lightning']} REAL-TIME CC MONITOR {F['lightning']}          ║
-    ║   {F['crown']} READY FOR DROPS {F['crown']}                     ║
-    ╚════════════════════════════════════════════╝
+    print("""
+    ╔════════════════════════════════╗
+    ║   🔥 XYRON LIVE DROPS 🔥       ║
+    ║   Starting bot...              ║
+    ╚════════════════════════════════╝
     """)
     
-    # Start bot
-    client = TelegramClient('xyron_live', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-    bot = await client.get_me()
-    logger.info(f"{F['check']} BOT ONLINE: @{bot.username}")
+    print(f"API_ID: {API_ID}")
+    print(f"API_HASH: {API_HASH[:10]}...")
+    print(f"BOT_TOKEN: {BOT_TOKEN[:15]}..." if BOT_TOKEN else "BOT_TOKEN: NOT SET")
+    print(f"OWNER_ID: {OWNER_ID}")
+    print(f"DESTINATION: {DESTINATION}")
     
-    # Health check for Railway
+    if not API_ID or not API_HASH or not BOT_TOKEN:
+        logger.error("Missing credentials! Set API_ID, API_HASH, BOT_TOKEN")
+        return
+    
+    if not OWNER_ID:
+        logger.error("Missing OWNER_ID! Set it in Railway variables")
+        return
+    
+    # Start client
+    client = TelegramClient('xyron', API_ID, API_HASH)
+    
+    try:
+        await client.start(bot_token=BOT_TOKEN)
+        me = await client.get_me()
+        logger.info(f"✅ Bot online: @{me.username}")
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
+        return
+    
+    # Simple health check for Railway
     if os.environ.get('PORT'):
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(('0.0.0.0', int(os.environ.get('PORT', 8080))))
-        sock.listen(1)
-    
-    # Load previously added channels
-    monitored_entities = []
-    for ch in cm.get_all():
         try:
-            entity = await client.get_entity(ch['username'])
-            monitored_entities.append(entity)
-            logger.info(f"{F['satellite']} MONITORING: {ch['username']}")
+            from aiohttp import web
+            app = web.Application()
+            app.router.add_get('/', lambda r: web.Response(text='OK'))
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', 8080)))
+            await site.start()
+            logger.info(f"✅ Health check running on port {os.environ.get('PORT', 8080)}")
         except Exception as e:
-            logger.error(f"{F['warning']} CAN'T ACCESS: {ch['username']}")
+            logger.warning(f"Health check not started: {e}")
     
-    # Send startup
-    await client.send_message(OWNER_ID, f"{F['check']} XYRON ONLINE\n{F['satellite']} Monitoring {len(monitored_entities)} channels")
+    # Load saved channels
+    saved = load_channels()
+    monitored = []
+    
+    for ch in saved:
+        try:
+            entity = await client.get_entity(ch)
+            monitored.append(entity)
+            logger.info(f"📡 Monitoring: {ch}")
+        except Exception as e:
+            logger.warning(f"⚠️ Cannot access {ch}: {e}")
+    
+    # Notify owner
+    try:
+        await client.send_message(OWNER_ID, f"✅ XYRON ONLINE\n📡 Monitoring {len(monitored)} channels\n📍 Destination: {DESTINATION}")
+        logger.info(f"✅ Sent startup message to owner")
+    except Exception as e:
+        logger.warning(f"Could not notify owner: {e}")
     
     if DESTINATION:
-        await client.send_message(DESTINATION, f"{F['alert']} **XYRON LIVE** {F['alert']}\n{F['lightning']} System Active • Ready for Drops")
+        try:
+            await client.send_message(DESTINATION, f"🔥 **XYRON LIVE** 🔥\nSystem active • Ready for drops")
+            logger.info(f"✅ Sent startup message to channel")
+        except:
+            pass
     
-    # Track processed messages
     processed = set()
     
     # ===== COMMANDS =====
     @client.on(events.NewMessage(pattern='/start'))
-    async def cmd_start(event):
-        if event.sender_id == OWNER_ID:
-            await event.reply(f"""
-{F['crown']} **XYRON CONTROL PANEL** {F['crown']}
-━━━━━━━━━━━━━━━━━━━━━
-{F['check']} Status: `LIVE`
-{F['satellite']} Channels: `{len(monitored_entities)}`
+    async def start_cmd(e):
+        if e.sender_id != OWNER_ID:
+            return await e.reply("❌ Unauthorized")
+        await e.reply(f"""
+{F['crown']} **XYRON ACTIVE** {F['crown']}
+━━━━━━━━━━━━━━━━━
+{F['check']} Status: LIVE
+{F['satellite']} Channels: {len(monitored)}
 {F['add']} /add @channel
-{F['remove']} /remove @channel
+{F['remove']} /remove @channel  
 {F['list']} /list
-{F['stats']} /stats
-{F['power']} /test
-            """)
-    
-    @client.on(events.NewMessage(pattern='/add'))
-    async def cmd_add(event):
-        if event.sender_id != OWNER_ID:
-            return
-        parts = event.message.text.split()
-        if len(parts) < 2:
-            await event.reply(f"{F['warning']} Usage: `/add @channel`")
-            return
-        
-        channel = parts[1]
-        try:
-            entity = await client.get_entity(channel)
-            # Try to join
-            try:
-                await client(JoinChannelRequest(entity))
-                await asyncio.sleep(1)
-            except:
-                pass
-            
-            username = entity.username or channel
-            title = entity.title
-            
-            if cm.add(entity.id, username, title):
-                monitored_entities.append(entity)
-                await event.reply(f"{F['add']} **ADDED:** `{username}`\n{F['check']} Now monitoring this channel!")
-                logger.info(f"{F['add']} Added: {username}")
-            else:
-                await event.reply(f"{F['warning']} Channel already monitored!")
-        except Exception as e:
-            await event.reply(f"{F['skull']} Error: {str(e)[:100]}")
-    
-    @client.on(events.NewMessage(pattern='/remove'))
-    async def cmd_remove(event):
-        if event.sender_id != OWNER_ID:
-            return
-        parts = event.message.text.split()
-        if len(parts) < 2:
-            await event.reply(f"{F['warning']} Usage: `/remove @channel`")
-            return
-        
-        channel = parts[1].replace('@', '')
-        if cm.remove(channel):
-            for e in monitored_entities[:]:
-                if e.username == channel:
-                    monitored_entities.remove(e)
-            await event.reply(f"{F['remove']} **REMOVED:** `{channel}`")
-            logger.info(f"{F['remove']} Removed: {channel}")
-        else:
-            await event.reply(f"{F['warning']} Channel not found!")
-    
-    @client.on(events.NewMessage(pattern='/list'))
-    async def cmd_list(event):
-        if event.sender_id != OWNER_ID:
-            return
-        channels = cm.get_all()
-        if not channels:
-            await event.reply(f"{F['warning']} No channels monitored!")
-            return
-        
-        msg = f"{F['list']} **MONITORED CHANNELS**\n━━━━━━━━━━━━━━━━━\n"
-        for i, ch in enumerate(channels, 1):
-            status = "🟢" if any(e.username == ch['username'] for e in monitored_entities) else "🔴"
-            msg += f"{status} {i}. `{ch['username']}`\n"
-        await event.reply(msg)
-    
-    @client.on(events.NewMessage(pattern='/stats'))
-    async def cmd_stats(event):
-        if event.sender_id != OWNER_ID:
-            return
-        await event.reply(f"""
-{F['crystal']} **XYRON STATISTICS**
-━━━━━━━━━━━━━━━━━━━
-{F['satellite']} Active Channels: `{len(monitored_entities)}`
-{F['drop']} Drops Today: `Calculating...`
-{F['quantum']} Status: `LIVE`
-{F['check']} Verified: `XYRON ACTIVE`
+{F['drop']} /test
         """)
     
-    @client.on(events.NewMessage(pattern='/test'))
-    async def cmd_test(event):
-        if event.sender_id != OWNER_ID:
+    @client.on(events.NewMessage(pattern='/add'))
+    async def add_cmd(e):
+        if e.sender_id != OWNER_ID:
             return
-        # Send test drop
-        test_cards = [{'masked': '4111****1111', 'bin': '411111', 'exp': '12/26', 'cvv': '123', 'type': '💳 TEST'}]
-        test_drop = format_drop(test_cards, "TEST_CHANNEL")
-        await client.send_message(DESTINATION or OWNER_ID, test_drop)
-        await event.reply(f"{F['check']} Test drop sent!")
+        parts = e.text.split()
+        if len(parts) < 2:
+            return await e.reply("Usage: /add @channel")
+        ch = parts[1]
+        try:
+            entity = await client.get_entity(ch)
+            username = entity.username or ch
+            if username not in saved:
+                saved.append(username)
+                save_channels(saved)
+                monitored.append(entity)
+                await e.reply(f"{F['add']} Added: `{username}`")
+                logger.info(f"Added: {username}")
+            else:
+                await e.reply("Already monitoring!")
+        except Exception as ex:
+            await e.reply(f"Error: {str(ex)[:100]}")
+    
+    @client.on(events.NewMessage(pattern='/remove'))
+    async def remove_cmd(e):
+        if e.sender_id != OWNER_ID:
+            return
+        parts = e.text.split()
+        if len(parts) < 2:
+            return await e.reply("Usage: /remove @channel")
+        ch = parts[1].replace('@', '')
+        if ch in saved:
+            saved.remove(ch)
+            save_channels(saved)
+            for m in monitored[:]:
+                if hasattr(m, 'username') and m.username == ch:
+                    monitored.remove(m)
+            await e.reply(f"{F['remove']} Removed: `{ch}`")
+        else:
+            await e.reply("Channel not found!")
+    
+    @client.on(events.NewMessage(pattern='/list'))
+    async def list_cmd(e):
+        if e.sender_id != OWNER_ID:
+            return
+        if not saved:
+            return await e.reply("No channels monitored!")
+        msg = f"{F['list']} **Channels:**\n"
+        for i, ch in enumerate(saved, 1):
+            status = "🟢" if any(hasattr(m, 'username') and m.username == ch for m in monitored) else "🔴"
+            msg += f"{status} {i}. `{ch}`\n"
+        await e.reply(msg)
+    
+    @client.on(events.NewMessage(pattern='/test'))
+    async def test_cmd(e):
+        if e.sender_id != OWNER_ID:
+            return
+        test_cards = [{'masked': '4111****1111', 'bin': '411111', 'exp': '12/26', 'cvv': '123', 'type': 'TEST'}]
+        dest = DESTINATION if DESTINATION else OWNER_ID
+        await client.send_message(dest, format_drop(test_cards, "TEST"))
+        await e.reply("✅ Test drop sent!")
     
     # ===== LIVE DROP HANDLER =====
-    @client.on(events.NewMessage(chats=monitored_entities))
-    async def live_drop(event):
-        msg_id = f"{event.chat_id}_{event.message.id}"
-        if msg_id in processed:
+    @client.on(events.NewMessage(chats=monitored))
+    async def drop_handler(e):
+        mid = f"{e.chat_id}_{e.message.id}"
+        if mid in processed:
             return
-        
         if len(processed) > 5000:
             processed.clear()
-        
-        if not event.message.text:
+        if not e.message or not e.message.text:
             return
-        
-        text = event.message.text
-        
-        # Check for CC
-        has_cc = bool(re.search(CC_FORMATTED, text)) or bool(re.search(CC_WITH_EXP, text))
-        has_keywords = any(k in text.lower() for k in KEYWORDS)
-        
-        if has_cc or has_keywords:
-            cards = extract_ccs(text)
-            
-            if cards:
-                processed.add(msg_id)
-                channel_name = event.chat.title or event.chat.username or str(event.chat_id)
-                
-                # Format and send drop
-                drop_msg = format_drop(cards, channel_name)
-                
-                try:
-                    await client.send_message(DESTINATION, drop_msg, link_preview=False)
-                    logger.info(f"{F['drop']} DROPPED {len(cards)} cards from {channel_name}")
-                    
-                    # Also send raw original for reference
-                    await client.send_message(DESTINATION, f"{F['neon']} **RAW CAPTURE:**\n`{text[:300]}`")
-                except Exception as e:
-                    logger.error(f"Send error: {e}")
+        text = e.message.text
+        if not re.search(CC_FORMATTED, text) and not any(k in text.lower() for k in KEYWORDS):
+            return
+        cards = extract_ccs(text)
+        if cards:
+            processed.add(mid)
+            name = e.chat.title or e.chat.username or "UNKNOWN"
+            dest = DESTINATION if DESTINATION else OWNER_ID
+            try:
+                await client.send_message(dest, format_drop(cards, name), link_preview=False)
+                logger.info(f"💧 DROPPED {len(cards)} cards from {name}")
+            except FloodWaitError as wait:
+                logger.warning(f"Rate limited, waiting {wait.seconds}s")
+                await asyncio.sleep(wait.seconds)
+            except Exception as ex:
+                logger.error(f"Send error: {ex}")
     
-    logger.info(f"{F['alert']}{F['lightning']} XYRON LIVE - READY FOR DROPS {F['lightning']}{F['alert']}")
-    logger.info(f"{F['satellite']} MONITORING: {len(monitored_entities)} CHANNELS")
-    logger.info(f"{F['target']} DESTINATION: {DESTINATION or 'OWNER'}")
-    logger.info(f"{F['crown']} TYPE: /add @channel TO START MONITORING")
+    logger.info(f"🚀 XYRON LIVE - READY!")
+    logger.info(f"📡 Monitoring {len(monitored)} channels")
+    logger.info(f"📍 Destination: {DESTINATION or OWNER_ID}")
+    logger.info(f"💬 Send /start to your bot")
     
-    await asyncio.Event().wait()
+    await client.run_until_disconnected()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Stopped")
+    except Exception as e:
+        logger.error(f"Fatal: {e}")
