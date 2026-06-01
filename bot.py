@@ -13,12 +13,13 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 
 # ===== CONFIG =====
-API_ID = int(os.environ.get("22225572", 0))
-API_HASH = os.environ.get("3734fae2ee81188b5355cab5a30e8f55", "")
-BOT_TOKEN = os.environ.get("8808705051:AAGLbuTt3CXJ3Rf2kwChmcw_RNKJJqoTZLY", "")
-OWNER_ID = int(os.environ.get("5758431714", 0))
-DESTINATION = os.environ.get("@xyrons", "@xyrons")
+API_ID = int(os.environ.get('22225572', 0))
+API_HASH = os.environ.get('3734fae2ee81188b5355cab5a30e8f55', '')
+BOT_TOKEN = os.environ.get('8808705051:AAGLbuTt3CXJ3Rf2kwChmcw_RNKJJqoTZLY', '')
+OWNER_ID = int(os.environ.get('5758431714', 0))
+DESTINATION = os.environ.get('@xyrons', '@xyrons')
 
+CHANNELS_FILE = 'monitored.json'
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -128,18 +129,21 @@ async def main():
     ╚════════════════════════════════╝
     """)
     
-    print("API_ID:", API_ID)
-    print("API_HASH:", API_HASH[:10] + "...")
-    print("BOT_TOKEN:", BOT_TOKEN[:15] + "...")
-    print("OWNER_ID:", OWNER_ID)
-    print("DESTINATION:", DESTINATION)
+    # DEBUG PRINTS
+    print(f"API_ID: {API_ID}")
+    print(f"API_HASH: {API_HASH[:10] if API_HASH else 'NOT SET'}...")
+    print(f"BOT_TOKEN: {BOT_TOKEN[:15] if BOT_TOKEN else 'NOT SET'}...")
+    print(f"OWNER_ID: {OWNER_ID}")
+    print(f"DESTINATION: {DESTINATION}")
     
     if not API_ID or not API_HASH or not BOT_TOKEN:
-        logger.error("Missing credentials!")
+        logger.error("Missing credentials! Set Railway variables")
+        print("❌ Missing API_ID, API_HASH, or BOT_TOKEN")
         return
     
     if not OWNER_ID:
         logger.error("Missing OWNER_ID!")
+        print("❌ Missing OWNER_ID")
         return
     
     client = TelegramClient('xyron', API_ID, API_HASH)
@@ -148,8 +152,10 @@ async def main():
         await client.start(bot_token=BOT_TOKEN)
         me = await client.get_me()
         logger.info(f"✅ Bot online: @{me.username}")
+        print(f"✅ Bot online: @{me.username}")
     except Exception as e:
         logger.error(f"Failed to start: {e}")
+        print(f"❌ Failed to start: {e}")
         return
     
     # Health check
@@ -180,8 +186,10 @@ async def main():
         await client.send_message(OWNER_ID, f"✅ XYRON ONLINE\n📡 Monitoring {len(monitored)} channels")
         if DESTINATION:
             await client.send_message(DESTINATION, f"🔥 **XYRON LIVE** 🔥\nSystem active • Ready for drops")
+        print("✅ Startup messages sent")
     except Exception as e:
         logger.warning(f"Could not send startup: {e}")
+        print(f"⚠️ Could not send startup: {e}")
     
     processed = set()
     
@@ -288,8 +296,9 @@ async def main():
                 logger.error(f"Send error: {ex}")
     
     logger.info(f"🚀 XYRON LIVE - READY!")
+    print(f"🚀 XYRON LIVE - READY!")
     logger.info(f"📡 Monitoring {len(monitored)} channels")
-    logger.info(f"💬 Send /start to @{(await client.get_me()).username}")
+    print(f"📡 Monitoring {len(monitored)} channels")
     
     await client.run_until_disconnected()
 
@@ -300,3 +309,4 @@ if __name__ == "__main__":
         logger.info("Stopped")
     except Exception as e:
         logger.error(f"Fatal: {e}")
+        print(f"❌ Fatal error: {e}")
