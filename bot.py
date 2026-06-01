@@ -1,6 +1,6 @@
 """
-XYRON LIVE DROPS - WITH FORCE JOIN COMMAND
-Can join any public channel automatically
+XYRON LIVE DROPS - USER ACCOUNT VERSION
+Can join any channel automatically using YOUR account
 """
 
 import asyncio
@@ -11,13 +11,13 @@ import logging
 from datetime import datetime
 
 from telethon import TelegramClient, events
-from telethon.errors import FloodWaitError, ChannelPrivateError, UsernameNotOccupiedError
+from telethon.errors import FloodWaitError
 from telethon.tl.functions.channels import JoinChannelRequest
 
 # ===== CONFIG =====
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
+PHONE_NUMBER = os.environ.get('PHONE_NUMBER', '')  # Your phone number
 OWNER_ID = int(os.environ.get('OWNER_ID', 0))
 DESTINATION = os.environ.get('DESTINATION_CHANNEL', '@xyrons')
 
@@ -132,23 +132,26 @@ async def main():
     print("""
     ╔════════════════════════════════════╗
     ║   🔥 XYRON LIVE DROPS 🔥           ║
-    ║   WITH FORCE JOIN COMMAND          ║
+    ║   USER ACCOUNT MODE                ║
+    ║   Can auto-join ANY channel!       ║
     ╚════════════════════════════════════╝
     """)
     
-    if not API_ID or not API_HASH or not BOT_TOKEN:
-        logger.error("Missing credentials!")
+    if not API_ID or not API_HASH or not PHONE_NUMBER:
+        logger.error("Missing credentials! Set API_ID, API_HASH, PHONE_NUMBER")
         return
     
-    client = TelegramClient('xyron', API_ID, API_HASH)
+    # Use USER account (not bot token!)
+    client = TelegramClient('xyron_user', API_ID, API_HASH)
     
     try:
-        await client.start(bot_token=BOT_TOKEN)
+        await client.start(phone=PHONE_NUMBER)
         me = await client.get_me()
-        logger.info(f"✅ Bot online: @{me.username}")
-        print(f"✅ Bot online: @{me.username}")
+        logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
+        print(f"✅ Logged in as: {me.first_name} (@{me.username})")
     except Exception as e:
-        logger.error(f"Failed: {e}")
+        logger.error(f"Failed to login: {e}")
+        print(f"❌ Login failed: {e}")
         return
     
     # Health check
@@ -175,15 +178,14 @@ async def main():
             logger.warning(f"⚠️ Cannot access {ch}: {e}")
     
     try:
-        await client.send_message(OWNER_ID, f"✅ XYRON ONLINE\n📡 Monitoring {len(monitored)} channels")
         if DESTINATION:
-            await client.send_message(DESTINATION, f"🔥 **XYRON LIVE** 🔥\nBot ready | /join @channel to add")
+            await client.send_message(DESTINATION, f"🔥 **XYRON LIVE** 🔥\nUser mode active | Can auto-join channels")
     except:
         pass
     
     processed = set()
     
-    # ===== FORCE JOIN COMMAND =====
+    # ===== FORCE JOIN COMMAND (WORKS WITH USER ACCOUNT!) =====
     @client.on(events.NewMessage(pattern='/join'))
     async def force_join(e):
         if e.sender_id != OWNER_ID:
@@ -198,33 +200,27 @@ async def main():
         try:
             # Get channel entity
             entity = await client.get_entity(channel)
-            
-            # Try to join
-            await client(JoinChannelRequest(entity))
-            await asyncio.sleep(1)
-            
-            # Get channel info
             channel_title = entity.title
             channel_username = entity.username or channel
             
+            # JOIN the channel (THIS WORKS WITH USER ACCOUNT!)
+            await client(JoinChannelRequest(entity))
+            await asyncio.sleep(1)
+            
             await e.reply(f"""
-{F['join']} **FORCE JOIN SUCCESSFUL** {F['join']}
+{F['join']} **AUTO-JOIN SUCCESSFUL** {F['join']}
 ━━━━━━━━━━━━━━━━━━━
 {F['check']} **Channel:** `{channel_username}`
 {F['target']} **Title:** `{channel_title}`
-{F['satellite']} **Status:** `MEMBER ADDED`
+{F['satellite']} **Status:** `JOINED SUCCESSFULLY`
 
 {F['add']} Now add to monitoring:
 `/add {channel_username}`
             """)
-            logger.info(f"✅ Force joined: {channel_username}")
+            logger.info(f"✅ Auto-joined: {channel_username}")
             
-        except UsernameNotOccupiedError:
-            await e.reply(f"{F['skull']} Channel `{channel}` not found!")
-        except ChannelPrivateError:
-            await e.reply(f"{F['warning']} Channel is private! Invite bot manually.")
         except Exception as ex:
-            await e.reply(f"{F['skull']} Failed: {str(ex)[:100]}")
+            await e.reply(f"{F['skull']} Failed to join: {str(ex)[:100]}")
             logger.error(f"Join failed: {ex}")
     
     @client.on(events.NewMessage(pattern='/start'))
@@ -232,15 +228,20 @@ async def main():
         if e.sender_id != OWNER_ID:
             return await e.reply("❌ Unauthorized")
         await e.reply(f"""
-{F['crown']} **XYRON ACTIVE** {F['crown']}
-━━━━━━━━━━━━━━━━━━━
+{F['crown']} **XYRON ACTIVE (USER MODE)** {F['crown']}
+━━━━━━━━━━━━━━━━━━━━━━━━
 {F['check']} Status: LIVE
 {F['satellite']} Channels: {len(monitored)}
-{F['join']} /join @channel
-{F['add']} /add @channel
-{F['remove']} /remove @channel  
+{F['join']} /join @channel  - Auto-join ANY channel
+{F['add']} /add @channel    - Start monitoring
+{F['remove']} /remove @channel - Stop monitoring
 {F['list']} /list
 {F['drop']} /test
+
+⚡ **USER MODE FEATURES:**
+• Can auto-join ANY public channel
+• Can see all messages
+• Full access like normal user
         """)
     
     @client.on(events.NewMessage(pattern='/add'))
@@ -288,7 +289,7 @@ async def main():
         if e.sender_id != OWNER_ID:
             return
         if not saved:
-            return await e.reply("No channels monitored!\nUse /add @channel")
+            return await e.reply("No channels monitored!\nUse /join @channel then /add")
         msg = f"{F['list']} **Channels:**\n"
         for i, ch in enumerate(saved, 1):
             status = "🟢" if any(hasattr(m, 'username') and m.username == ch for m in monitored) else "🔴"
@@ -340,13 +341,12 @@ async def main():
             except Exception as ex:
                 logger.error(f"Send error: {ex}")
     
-    logger.info(f"🚀 XYRON LIVE - READY!")
     print(f"\n{'='*50}")
-    print(f"✅ BOT IS READY!")
+    print(f"✅ USER MODE BOT IS READY!")
     print(f"📡 Monitoring {len(monitored)} channels")
     print(f"\n🔥 COMMANDS:")
-    print(f"   /join @channel  - Force bot to join any channel")
-    print(f"   /add @channel   - Start monitoring a channel")
+    print(f"   /join @channel   - AUTO-JOIN any channel!")
+    print(f"   /add @channel    - Start monitoring")
     print(f"   /remove @channel - Stop monitoring")
     print(f"   /list           - Show monitored channels")
     print(f"   /test           - Send test drop")
