@@ -1,6 +1,6 @@
 """
-XYRON LIVE DROPS - USER ACCOUNT WITH SESSION FILE
-No login prompt needed!
+XYRON LIVE DROPS - SESSION STRING VERSION
+No files needed!
 """
 
 import asyncio
@@ -12,12 +12,13 @@ from datetime import datetime
 
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
+from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest
 
 # ===== CONFIG =====
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
-SESSION_STRING = os.environ.get('SESSION_STRING', '')  # Optional: use session string instead of file
+SESSION_STRING = os.environ.get('SESSION_STRING', '')  # Add this variable!
 OWNER_ID = int(os.environ.get('OWNER_ID', 0))
 DESTINATION = os.environ.get('DESTINATION_CHANNEL', '@xyrons')
 
@@ -132,7 +133,7 @@ async def main():
     print("""
     ╔════════════════════════════════════╗
     ║   🔥 XYRON LIVE DROPS 🔥           ║
-    ║   USER ACCOUNT WITH SESSION        ║
+    ║   SESSION STRING MODE              ║
     ╚════════════════════════════════════╝
     """)
     
@@ -140,18 +141,15 @@ async def main():
         logger.error("Missing API_ID or API_HASH!")
         return
     
-    # Use session file if exists, otherwise use session string
-    if os.path.exists('xyron_user.session'):
-        print("✅ Found session file, logging in...")
-        client = TelegramClient('xyron_user', API_ID, API_HASH)
-    elif SESSION_STRING:
-        print("✅ Using session string, logging in...")
-        from telethon.sessions import StringSession
-        client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    else:
-        logger.error("No session file or session string found!")
-        print("❌ Upload xyron_user.session file to Railway!")
+    if not SESSION_STRING:
+        logger.error("Missing SESSION_STRING! Add it to Railway Variables")
+        print("❌ Add SESSION_STRING to Railway Variables tab!")
         return
+    
+    print("✅ Using session string, logging in...")
+    
+    # Create client with session string
+    client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     
     try:
         await client.start()
