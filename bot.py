@@ -1,5 +1,5 @@
 """
-XYRON LIVE DROPS - COMPLETE WORKING VERSION
+XYRON LIVE DROPS - WORKING VERSION
 """
 
 import asyncio
@@ -9,7 +9,6 @@ import json
 import logging
 from datetime import datetime
 
-# Import telethon - this will work after pip install
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 
