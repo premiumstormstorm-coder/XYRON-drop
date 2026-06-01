@@ -13,11 +13,11 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 
 # ===== CONFIG =====
-API_ID = int(os.environ.get('API_ID', 0))
-API_HASH = os.environ.get('API_HASH', '')
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
-OWNER_ID = int(os.environ.get('OWNER_ID', 0))
-DESTINATION = os.environ.get('DESTINATION_CHANNEL', '@xyrons')
+API_ID = int(os.environ.get('22225572', 0))
+API_HASH = os.environ.get('3734fae2ee81188b5355cab5a30e8f55', '')
+BOT_TOKEN = os.environ.get('8808705051:AAGLbuTt3CXJ3Rf2kwChmcw_RNKJJqoTZLY', '')
+OWNER_ID = int(os.environ.get('5758431714', 0))
+DESTINATION = os.environ.get('@xyrons', '@xyrons')
 
 CHANNELS_FILE = 'monitored.json'
 
