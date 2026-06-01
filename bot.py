@@ -1,5 +1,5 @@
 """
-XYRON LIVE DROPS - WORKING VERSION
+XYRON LIVE DROPS - WORKING BOT
 """
 
 import asyncio
@@ -13,11 +13,11 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 
 # ===== CONFIG =====
-API_ID = int(os.environ.get('22225572', 0))
-API_HASH = os.environ.get('3734fae2ee81188b5355cab5a30e8f55', '')
-BOT_TOKEN = os.environ.get('8808705051:AAGLbuTt3CXJ3Rf2kwChmcw_RNKJJqoTZLY', '')
-OWNER_ID = int(os.environ.get('5758431714', 0))
-DESTINATION = os.environ.get('@xyrons', '')
+API_ID = int(os.environ.get('API_ID', 0))
+API_HASH = os.environ.get('API_HASH', '')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
+OWNER_ID = int(os.environ.get('OWNER_ID', 0))
+DESTINATION = os.environ.get('DESTINATION_CHANNEL', '@xyrons')
 
 CHANNELS_FILE = 'monitored.json'
 
@@ -129,8 +129,14 @@ async def main():
     ╚════════════════════════════════╝
     """)
     
+    print("API_ID:", API_ID)
+    print("API_HASH:", API_HASH[:10] + "...")
+    print("BOT_TOKEN:", BOT_TOKEN[:15] + "...")
+    print("OWNER_ID:", OWNER_ID)
+    print("DESTINATION:", DESTINATION)
+    
     if not API_ID or not API_HASH or not BOT_TOKEN:
-        logger.error("Missing credentials! Set Railway variables")
+        logger.error("Missing credentials!")
         return
     
     if not OWNER_ID:
@@ -144,7 +150,7 @@ async def main():
         me = await client.get_me()
         logger.info(f"✅ Bot online: @{me.username}")
     except Exception as e:
-        logger.error(f"Failed: {e}")
+        logger.error(f"Failed to start: {e}")
         return
     
     # Health check
@@ -168,13 +174,15 @@ async def main():
             entity = await client.get_entity(ch)
             monitored.append(entity)
             logger.info(f"📡 Monitoring: {ch}")
-        except:
-            logger.warning(f"⚠️ Cannot access: {ch}")
+        except Exception as e:
+            logger.warning(f"⚠️ Cannot access {ch}: {e}")
     
     try:
         await client.send_message(OWNER_ID, f"✅ XYRON ONLINE\n📡 Monitoring {len(monitored)} channels")
-    except:
-        pass
+        if DESTINATION:
+            await client.send_message(DESTINATION, f"🔥 **XYRON LIVE** 🔥\nSystem active • Ready for drops")
+    except Exception as e:
+        logger.warning(f"Could not send startup: {e}")
     
     processed = set()
     
@@ -253,6 +261,7 @@ async def main():
         dest = DESTINATION if DESTINATION else OWNER_ID
         await client.send_message(dest, format_drop(test_cards, "TEST"))
         await e.reply("✅ Test drop sent!")
+        logger.info("Test drop sent")
     
     @client.on(events.NewMessage(chats=monitored))
     async def drop_handler(e):
@@ -281,6 +290,7 @@ async def main():
     
     logger.info(f"🚀 XYRON LIVE - READY!")
     logger.info(f"📡 Monitoring {len(monitored)} channels")
+    logger.info(f"💬 Send /start to @{(await client.get_me()).username}")
     
     await client.run_until_disconnected()
 
