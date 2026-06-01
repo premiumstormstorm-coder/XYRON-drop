@@ -1,3 +1,4 @@
+```python
 """
 XYRON LIVE DROPS - COMPLETE PRODUCTION BOT
 ✅ Auto drop when CC detected LIVE
@@ -566,7 +567,7 @@ async def main():
 ✅ **XYRON LIVE DROPS - FULLY ACTIVE**
 {'='*55}
 {E['satellite']} Monitoring: {len(monitored)} channels
-{{E['drop']} Auto-drop: ENABLED
+{E['drop']} Auto-drop: ENABLED
 {E['rocket']} Destination: {DESTINATION}
 {E['crown']} Owner: @{bot_me.username}
 
@@ -591,4 +592,3 @@ if __name__ == "__main__":
         logger.info("Bot stopped")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
-```
