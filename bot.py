@@ -1,6 +1,5 @@
 """
-XYRON DROP ☔ – ULTIMATE CC EXTRACTOR
-Handles: pipe, slash, space, MMyy, card-only, everything.
+XYRON DROP ☔ – ULTIMATE EXTRACTOR (now handles multi-line Exp Date / CVV2)
 """
 
 import asyncio
@@ -29,7 +28,6 @@ STATS_FILE = 'stats.json'
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ===== CC VALIDATION =====
 def luhn_check(card):
     card = re.sub(r'[\s\-|]', '', card)
     if not card.isdigit() or not (13 <= len(card) <= 16):
@@ -56,24 +54,40 @@ def get_card_type(card):
         return "DISCOVER"
     return "CARD"
 
-# ===== EXTRACT CC, EXPIRY, CVV – HANDLES EVERYTHING =====
 def extract_ccs(text):
-    """Return list with one card (first valid). Extracts all info."""
-    # 1. Standard pipe: 5446147525910816|07|27|364
+    """Extract CC, expiry, CVV from any format – now handles multi-line labeled entries."""
+    # 1. Multi-line with "Exp Date" and "CVV2" labels
+    pattern = re.compile(
+        r'(\d{13,16})\s*\n\s*Exp\s*Date\s*\n\s*(\d{2}/\d{2,4})\s*\n\s*CVV2?\s*\n\s*(\d{3,4})',
+        re.IGNORECASE | re.MULTILINE
+    )
+    m = pattern.search(text)
+    if m:
+        cc = m.group(1)
+        if luhn_check(cc):
+            return [{
+                'number': cc,
+                'exp': m.group(2),
+                'cvv': m.group(3),
+                'bin': cc[:6],
+                'type': get_card_type(cc)
+            }]
+
+    # 2. Standard pipe: 5446147525910816|07|27|364
     m = re.search(r'(\d{13,16})\s*[|]\s*(\d{1,2})\s*[|]\s*(\d{2,4})\s*[|]\s*(\d{3,4})', text, re.I)
     if m:
         cc = re.sub(r'[\s\-|]', '', m.group(1))
         if luhn_check(cc):
             return [{'number': cc, 'exp': f"{m.group(2)}/{m.group(3)}", 'cvv': m.group(4), 'bin': cc[:6], 'type': get_card_type(cc)}]
 
-    # 2. Pipe with slash: 5193458202434359|07/26|591
+    # 3. Pipe with slash: 5193458202434359|07/26|591
     m = re.search(r'(\d{13,16})\s*[|]\s*(\d{2}/\d{2,4})\s*[|]\s*(\d{3,4})', text, re.I)
     if m:
         cc = re.sub(r'[\s\-|]', '', m.group(1))
         if luhn_check(cc):
             return [{'number': cc, 'exp': m.group(2), 'cvv': m.group(3), 'bin': cc[:6], 'type': get_card_type(cc)}]
 
-    # 3. Space separated: card + MMyy + cvv  (e.g., 4867960043082121 1129 358)
+    # 4. Space separated: card + MMyy + cvv  (e.g., 4867960043082121 1129 358)
     m = re.search(r'(\d{13,16})\s+(\d{4})\s+(\d{3,4})', text)
     if m:
         cc = m.group(1)
@@ -83,14 +97,14 @@ def extract_ccs(text):
             exp = f"{month}/{year}"
             return [{'number': cc, 'exp': exp, 'cvv': m.group(3), 'bin': cc[:6], 'type': get_card_type(cc)}]
 
-    # 4. Space separated: card + MM/YY + cvv
+    # 5. Space separated: card + MM/YY + cvv
     m = re.search(r'(\d{13,16})\s+(\d{2}/\d{2,4})\s+(\d{3,4})', text)
     if m:
         cc = m.group(1)
         if luhn_check(cc):
             return [{'number': cc, 'exp': m.group(2), 'cvv': m.group(3), 'bin': cc[:6], 'type': get_card_type(cc)}]
 
-    # 5. Space separated: card + MM + YY + cvv
+    # 6. Space separated: card + MM + YY + cvv
     m = re.search(r'(\d{13,16})\s+(\d{2})\s+(\d{2,4})\s+(\d{3,4})', text)
     if m:
         cc = m.group(1)
@@ -98,14 +112,14 @@ def extract_ccs(text):
             exp = f"{m.group(2)}/{m.group(3)}"
             return [{'number': cc, 'exp': exp, 'cvv': m.group(4), 'bin': cc[:6], 'type': get_card_type(cc)}]
 
-    # 6. Card + CVV only (space)
+    # 7. Card + CVV only (space)
     m = re.search(r'(\d{13,16})\s+(\d{3,4})', text)
     if m:
         cc = m.group(1)
         if luhn_check(cc):
             return [{'number': cc, 'exp': 'N/A', 'cvv': m.group(2), 'bin': cc[:6], 'type': get_card_type(cc)}]
 
-    # 7. Just the card number
+    # 8. Just the card number
     m = re.search(r'\b\d{13,16}\b', text)
     if m:
         cc = m.group(0)
@@ -114,7 +128,6 @@ def extract_ccs(text):
 
     return []
 
-# ===== STYLED DROP FORMAT =====
 def format_styled_drop(cards):
     card = cards[0]
     now = datetime.now().strftime("%I:%M:%S %p")
@@ -134,7 +147,7 @@ def format_styled_drop(cards):
     msg += f"⏱️ {date_today} {now}"
     return msg
 
-# ===== STATS MANAGER (same as before) =====
+# ===== STATS MANAGER =====
 class StatsManager:
     def __init__(self):
         self.stats = self.load()
@@ -183,7 +196,7 @@ MANUAL_CCS = [
 ]
 
 async def main():
-    print("\n🔥 XYRON DROP ☔ – FINAL VERSION 🔥\n")
+    print("\n🔥 XYRON DROP ☔ – MULTI-LINE SUPPORT ADDED 🔥\n")
 
     if not API_ID or not API_HASH or not SESSION_STRING:
         logger.error("Missing API_ID, API_HASH or SESSION_STRING")
@@ -211,11 +224,11 @@ async def main():
 
     if not sources:
         logger.error("No source groups. Use /add @channel")
-        # allow adding later
+        # still start to allow adding later
 
     try:
         dest_entity = await client.get_entity(DESTINATION)
-        await client.send_message(dest_entity, f"🔥 XYRON DROP ☔ ONLINE\nMonitoring {len(sources)} group(s)\nNow handles MMyy expiry")
+        await client.send_message(dest_entity, f"🔥 XYRON DROP ☔ ONLINE\nNow handles multi-line Exp Date / CVV2")
         logger.info(f"✅ Destination: {DESTINATION}")
     except Exception as e:
         logger.error(f"Destination error: {e}")
@@ -236,7 +249,7 @@ async def main():
 ━━━━━━━━━━━━━━━━━━━
 ✅ Status: LIVE
 📡 Groups: {len(sources)}
-💎 Formats: ALL (pipe, slash, space, MMyy)
+💎 Formats: ALL (pipe, slash, space, multi-line)
 
 📌 Commands: /status, /testcc, /add, /remove, /list, /stats, /today, /drop
         """)
@@ -252,19 +265,19 @@ async def main():
         if e.sender_id != OWNER_ID:
             return
         parts = e.text.split(maxsplit=1)
-        test_text = parts[1] if len(parts) > 1 else "4867960043082121 1129 358"
+        test_text = parts[1] if len(parts) > 1 else "5424320188943301\nExp Date\n01/27\nCVV2\n321"
         cards = extract_ccs(test_text)
         if cards:
             try:
                 await client.send_message(dest_entity, format_styled_drop(cards))
-                await e.reply(f"✅ Test drop sent – extracted: {cards[0]['exp']}")
+                await e.reply(f"✅ Test drop sent – extracted: {cards[0]['exp']}, CVV {cards[0]['cvv']}")
                 stats.add_drop(len(cards))
             except FloodWaitError as wait:
                 await asyncio.sleep(wait.seconds)
                 await client.send_message(dest_entity, format_styled_drop(cards))
                 await e.reply("✅ Test drop sent after wait")
         else:
-            await e.reply(f"❌ Could not extract CC from `{test_text}`")
+            await e.reply(f"❌ Could not extract CC from `{test_text[:80]}...`")
 
     @client.on(events.NewMessage(pattern='/add'))
     async def add_cmd(e):
@@ -362,9 +375,7 @@ async def main():
         if not text:
             return
 
-        print(f"\n📩 [{event.chat.title}] {text[:100]}...")
-
-        # Quick heuristic (avoid heavy regex on every message)
+        # Quick heuristic to avoid processing non-CC messages
         if not re.search(r'\b\d{13,16}\b', text):
             return
 
@@ -389,7 +400,7 @@ async def main():
 
     print(f"\n✅ XYRON DROP ☔ – READY")
     print(f"📡 Monitoring {len(sources)} group(s) → {DESTINATION}")
-    print("🧪 Test with: /testcc 4867960043082121 1129 358")
+    print("🧪 Test with: /testcc 5424320188943301\nExp Date\n01/27\nCVV2\n321")
     await client.run_until_disconnected()
 
 if __name__ == "__main__":
